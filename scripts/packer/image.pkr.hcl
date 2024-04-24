@@ -39,7 +39,7 @@ source "arm" "raspios" {
     start_sector = "8192"
     filesystem   = "fat"
     size         = "512MB"
-    mountpoint   = "/boot/firm"
+    mountpoint   = "/"
   }
   image_partitions {
     name         = "root"
