@@ -297,9 +297,8 @@ jobs:
           PKR_VAR_target_image_size:
             ${{ steps.generate-image-url.outputs.image_size}}
         run: |
-          export PACKER_LOG=1
           /entrypoint.sh init scripts/packer/image.pkr.hcl
-          SETUP_QEMU=false /entrypoint.sh build scripts/packer/image.pkr.hcl
+          SETUP_QEMU=false /entrypoint.sh build -debug scripts/packer/image.pkr.hcl
           ls -lh
           mv image.img /build
           ls -lh /build
