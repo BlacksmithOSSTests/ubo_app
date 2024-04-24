@@ -11,7 +11,7 @@ env:
 jobs:
   dependencies:
     name: Install Dependencies
-    runs-on: ubuntu-latest
+    runs-on: blacksmith
     steps:
       - uses: actions/checkout@v4
         name: Checkout
@@ -48,7 +48,7 @@ jobs:
     name: Type Check
     needs:
       - dependencies
-    runs-on: ubuntu-latest
+    runs-on: blacksmith
     steps:
       - uses: actions/checkout@v4
         name: Checkout
@@ -78,7 +78,7 @@ jobs:
     name: Lint
     needs:
       - dependencies
-    runs-on: ubuntu-latest
+    runs-on: blacksmith
     steps:
       - uses: actions/checkout@v4
         name: Checkout
@@ -105,7 +105,7 @@ jobs:
     name: Test
     needs:
       - dependencies
-    runs-on: ubuntu-latest
+    runs-on: blacksmith
     environment:
       name: test
       url: https://app.codecov.io/gh/${{ github.repository }}/
@@ -158,19 +158,12 @@ jobs:
           name: coverage-report
           path: htmlcov
 
-      - name: Upload Coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-          flags: integration
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
 
   build:
     name: Build
     needs:
       - dependencies
-    runs-on: ubuntu-latest
+    runs-on: blacksmith
     outputs:
       version: ${{ steps.extract-version.outputs.VERSION }}
       name: ${{ steps.extract-version.outputs.NAME }}
@@ -226,17 +219,6 @@ jobs:
             echo "Versions are consistent."
           fi
 
-      - name: Configure Sentry
-        run: |
-          echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}" >> ubo_app/.env
-          # conditionally set it based on whether it's a tag or not using github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-          if [ "${{ github.event_name }}" == "push" ] && [ "$(echo ${{ github.ref }} | grep -c 'refs/tags/v')" -eq 1 ]; then
-            echo "SENTRY_RELEASE=ubo-app@${{ steps.extract-version.outputs.VERSION }}" >> ubo_app/.env
-          else
-            echo "SENTRY_RELEASE=ubo-app@${{ github.sha }}" >> ubo_app/.env
-          fi
-          cat ubo_app/.env
-
       - name: Build
         run: poetry build
 
@@ -261,7 +243,7 @@ jobs:
       - lint
       - test
       - build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith
     container:
       image: mkaczanowski/packer-builder-arm
       volumes:
@@ -270,7 +252,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suffix: ['lite', '']
+        suffix: ['lite']
     steps:
       - run: echo Building amd64-${{ matrix.suffix }} image
 
@@ -344,107 +326,3 @@ jobs:
             /ubo_app-${{ needs.build.outputs.version }}-bookworm${{
             steps.generate-image-url.outputs.dashed_suffix }}.img.gz
           if-no-files-found: error
-
-  pypi-publish:
-    name: Publish to PyPI
-    if: >-
-      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs:
-      - type-check
-      - lint
-      - test
-      - build
-      - images
-    runs-on: ubuntu-latest
-    environment:
-      name: release
-      url: https://pypi.org/p/${{ needs.build.outputs.name }}
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: wheel
-          path: dist
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: binary
-          path: dist
-
-      - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist
-          verbose: true
-
-  release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    name: Release
-    needs:
-      - type-check
-      - lint
-      - test
-      - build
-      - pypi-publish
-      - images
-    runs-on: ubuntu-latest
-    environment:
-      name: release
-      url: https://pypi.org/p/${{ needs.build.outputs.name }}
-    permissions:
-      contents: write
-    steps:
-      - name: Procure Lite Image
-        uses: actions/download-artifact@v4
-        with:
-          name:
-            ubo_app-${{ needs.build.outputs.version
-            }}-bookworm-lite-arm64.img.gz
-          path: artifacts
-
-      - name: Procure Default Image
-        uses: actions/download-artifact@v4
-        with:
-          name: ubo_app-${{ needs.build.outputs.version }}-bookworm-arm64.img.gz
-          path: artifacts
-
-      - name: Procure Wheel
-        uses: actions/download-artifact@v4
-        with:
-          name: wheel
-          path: artifacts
-
-      - name: Procure Binary
-        uses: actions/download-artifact@v4
-        with:
-          name: binary
-          path: artifacts
-
-      - name:
-          Split Large Files into 2GB chunks in a for loop only if they are
-          bigger than 2GB
-        run: |
-          for file in artifacts/*; do
-            if [ $(stat -c%s "$file") -gt 2147000000 ]; then
-              split -b 2147000000 "$file" "$file"_
-              rm "$file"
-            fi
-          done
-
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*
-          tag_name: v${{ needs.build.outputs.version }}
-          body: |
-            Release of version ${{ needs.build.outputs.version }}
-            PyPI package: https://pypi.org/project/${{ needs.build.outputs.name }}/${{ needs.build.outputs.version }}
-
-            Note than GitHub doesn't allow assets bigger than 2GB in a release. Due to this, the files bigger than 2GB have been split into 2GB chunks. You can join them using the following command:
-
-            ```bash
-            cat [[filename]]_* > [[filename]]
-            ```
-          prerelease: false
-          draft: false
