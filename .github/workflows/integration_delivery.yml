@@ -288,6 +288,9 @@ jobs:
           IMAGE_SIZE=$(awk -v IMAGE_SIZE_GB=$IMAGE_SIZE_GB 'BEGIN {printf "%.0f", IMAGE_SIZE_GB * 1024 ^ 3}')
           echo "image_size=$IMAGE_SIZE" >> "$GITHUB_OUTPUT"
 
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+      
       - name: Build Artifact
         env:
           PKR_VAR_ubo_app_version: ${{ needs.build.outputs.version }}
